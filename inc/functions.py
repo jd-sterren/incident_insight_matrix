@@ -705,24 +705,37 @@ def collect_gps_data(start_dt=None, end_dt=None):
     print("No new data retrieved.")
     return None
 
-def search_gps_area(dt_start, dt_end, lat, lon, radius=1000, folder="gps_data", export_folder="exports"):
+def search_gps_area(dt_start=None, dt_end=None, lat=None, lon=None, radius=1000, folder="resources/gps_data", export_folder="resources/gps_search_exports"):
+    # Prompt individually for any missing values
+    if dt_start is None:
+        dt_start = input("Enter start datetime (YYYY-MM-DDTHH:MM): ")
+    if dt_end is None:
+        dt_end = input("Enter end datetime (YYYY-MM-DDTHH:MM): ")
+    if lat is None:
+        lat = float(input("Enter latitude: ex(40.123456)"))
+    if lon is None:
+        lon = float(input("Enter longitude: ex(-81.123456)"))
+
     # Load GPS data within the given date range
     gps_df = load_gps_data_in_range(dt_start, dt_end, folder=folder)
-    
+
     # Filter data based on the given latitude, longitude, and radius
     in_area = filter_by_radius(gps_df, "latitude", "longitude", lat, lon, radius)
 
     # Determine file name based on whether the DataFrame is empty
     file_prefix = "EMPTY_" if in_area.empty else ""
     file_name = f"{file_prefix}GPSDATA_{dt_start}_{dt_end}.xlsx"
-    file_path = f"{export_folder}/{file_name}"
-    file_path = file_path.replace(":","-")
+    file_path = f"{export_folder}/{file_name}".replace(":", "-")
 
+    if in_area.empty:
+        print(f"No data found within the specified radius of {radius} feet from ({lat}, {lon}) between {dt_start} and {dt_end}.")
+    else:
+        print(f"Data found within the specified radius of {radius} feet from ({lat}, {lon}) between {dt_start} and {dt_end}.")
+        print(f"Exporting data to {file_path}...")
+        
     # Export to Excel
     in_area.to_excel(file_path, index=False)
 
-    # print(f"File saved: {file_path}")
-    # return in_area
  
 ## ----------------- Calls For Service Functions ----------------- ##
 def fetch_calls_for_service(credentials, ori=None, start_date=None, end_date=None, limit=1000, data_type="All"):
