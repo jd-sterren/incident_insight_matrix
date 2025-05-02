@@ -48,3 +48,6 @@ old/
 # Ignore gps_data
 gps_data/
 gps_search_exports/
+
+# Ignore CFS files
+cfs/

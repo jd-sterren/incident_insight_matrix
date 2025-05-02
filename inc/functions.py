@@ -738,8 +738,8 @@ def search_gps_area(dt_start=None, dt_end=None, lat=None, lon=None, radius=1000,
 
  
 ## ----------------- Calls For Service Functions ----------------- ##
-def fetch_calls_for_service(credentials, ori=None, start_date=None, end_date=None, limit=1000, data_type="All"):
-    conn = server_connect(credentials['CAD_SERVER'], credentials['CAD_UID'], credentials['CAD_PWD'], credentials['CAD_DB'])
+def fetch_calls_for_service(ori=None, start_date=None, end_date=None, limit=1000, data_type="All"):
+    conn = server_connect(os.environ['CAD_SERVER'], os.environ['CAD_UID'], os.environ['CAD_PWD'], os.environ['CAD_DB'])
 
     # Apply limit only if no date filters are provided
     limit_clause = f"TOP {limit}" if start_date is None and end_date is None else ""
@@ -866,8 +866,21 @@ def fetch_calls_for_service(credentials, ori=None, start_date=None, end_date=Non
     # Only apply ORDER BY when limiting results
     if start_date is None and end_date is None:
         query += " ORDER BY Call.Call.CreateDatetime DESC"
+    
+    # Fetch the data
+    df = pd.read_sql_query(query, conn, params=params)
 
-    return pd.read_sql_query(query, conn, params=params)
+    # If data_type is not "All", add empty columns for the additional fields
+    if data_type != "All":
+        df[['notes','dispo','involved_people','vehicles']] = None
+
+    # Process the DataFrame
+    df = preprocess_calls(df)
+
+    # Update the daily summary of calltypes to ORI and date
+    update_daily_summary(df, csv_filename="resources/cfs/call_type_daily_summary.csv")
+
+    return df
 
 def count_all_dispo_items(df: pd.DataFrame, separator: str = ',') -> Counter:
     """

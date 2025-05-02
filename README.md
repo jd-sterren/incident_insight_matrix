@@ -15,3 +15,13 @@ Chunk 1 saved to gps_data/gps_2025-04-22T22-17_2025-04-26T21-13_part1.xlsx
 Chunk 2 saved to gps_data/gps_2025-04-22T22-17_2025-04-26T21-13_part2.xlsx
 
 If no Excel files are present in the folder, the system automatically pulls data for the past two days, which is the maximum range supported by the API. If Excel files exist, the system identifies the most recent file, extracts the latest recorded datetime, and uses that timestamp as the new starting point for data collection.
+
+The gps_area_search pulls from the functions file using search_gps_area(dt_start, dt_end, lat, lon, radius). If variables are not entered, it will prompt the user to fill all but the radius. By default, the radius from the coordinate given is 1,000 feet.
+
+search_gps_area(dt_start="2025-04-26T21:20", 
+    dt_end="2025-04-26T21:55", 
+    lat=40.8808,
+    lon=-84.5842, 
+    radius=1000)
+
+## Calls For Service Program (New World Tyler Technologies)
