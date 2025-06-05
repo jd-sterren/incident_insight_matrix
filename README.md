@@ -1,4 +1,5 @@
 # incident_insight_matrix
+<b>Work in Progress</b>
 Incident Insight Matrix leverages call-for-service data to predict emerging crime clusters. Through visual analysis and machine learning, it helps strategic planners allocate resources and manage public safety trends.
 
 ## GPS Ankle Monitor Program

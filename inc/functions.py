@@ -499,6 +499,45 @@ def load_gps_data_in_range(request_start, request_end, folder="gps_data"):
         ]
     return combined_df
 
+def load_recent_gps_data(oid: str, folder: str = "resources/gps_data", previous_files: int = 10) -> pd.DataFrame:
+    """
+    Load and combine recent GPS Excel files filtered by a specific OID.
+
+    Parameters:
+        oid (str): The OID to filter data by (e.g., 'ID9233571').
+        folder (str): The folder containing GPS Excel files.
+        previous_files (int): Number of recent files to load (default is 10).
+
+    Returns:
+        pd.DataFrame: Combined DataFrame of all matching rows.
+    """
+    combined_df = pd.DataFrame()
+
+    try:
+        files_with_mtime = [
+            (f, os.path.getmtime(os.path.join(folder, f)))
+            for f in os.listdir(folder)
+            if os.path.isfile(os.path.join(folder, f)) and f.startswith("gps_") and f.endswith(".xlsx")
+        ]
+
+        sorted_files = sorted(files_with_mtime, key=lambda x: x[1], reverse=True)
+        recent_files = sorted_files[:previous_files]
+
+        for filename, _ in recent_files:
+            filepath = os.path.join(folder, filename)
+            try:
+                df = pd.read_excel(filepath, parse_dates=["datetime_local"])
+                focus_df = df.loc[df["oid"] == oid].copy()
+                combined_df = pd.concat([combined_df, focus_df], ignore_index=True)
+            except Exception as file_err:
+                print(f"Error reading {filename}: {file_err}")
+                continue
+
+    except Exception as e:
+        print(f"Error accessing folder '{folder}': {e}")
+
+    return combined_df
+
 # def initialize_globals(credentials):
 def initialize_globals():
     """Initialize global GPS configuration settings."""
@@ -1015,6 +1054,10 @@ def preprocess_calls(df, timezone='America/New_York'):
     # df["notes"] = df["notes"].astype(str).str[:500]
     df["notes_chunks"] = df["notes"].apply(lambda x: split_text(x) if len(x) > 500 else [x])
 
+    # Add call types
+    cfs_types = pd.read_excel("resources/cfs/lib_call_types.xlsx", usecols=["CallType","Reportable","CodeType"])
+    df = df.merge(cfs_types, on="CallType", how="left")
+
     return df
 
 def update_daily_summary(cfs_data, csv_filename="call_type_daily_summary.csv", timezone='America/New_York'):
@@ -1077,7 +1120,7 @@ def update_daily_summary(cfs_data, csv_filename="call_type_daily_summary.csv", t
 
     print(f"Updated {csv_filename} with {len(new_data)} new records.")
 
-def load_summary_data(csv_filename="call_type_daily_summary.csv", years=5):
+def load_summary_data(csv_filename="resources/cfs/call_type_daily_summary.csv", years=5):
     """Loads the call type daily summary CSV and filters the last 'years' years of data."""
     
     # Read CSV (parse Date column as datetime)
@@ -1333,3 +1376,125 @@ def compute_total_cfs_ytd(df):
         "% Change Week-to-Week": week_change
     }
     return ytd_details
+
+def generate_focus_area_analysis(df, ori="OH0760400", top_n=15):
+    
+    # Exclude List: Needs imported from excel
+    exclude_address = ['3200 US 62','4004 TUSCARAWAS ST W', 'Not Listed']
+
+    df = df[
+        (df["ORI"] == ori) &
+        (df["CodeType"].notna()) &
+        (~df["FullAddress"].isin(exclude_address)) &
+        ((df["CommonName"].isna()) | (df["CommonName"] == "")) &
+        (df["Reportable"] == True) &
+        (~df['FullAddress'].str.contains("SOMEWHERE", na=False)) &
+        (df["CodeType"].str.lower() != "traffic")
+    ].copy()
+
+    today = pd.Timestamp.now().normalize()
+    timeframes = {
+        "Last 7 Days": today - pd.Timedelta(days=7),
+        "Last 14 Days": today - pd.Timedelta(days=14),
+        "Last 30 Days": today - pd.Timedelta(days=30),
+        "Year-to-Date": pd.Timestamp(today.year, 1, 1)
+    }
+
+    results = {}
+
+    for label, start in timeframes.items():
+        recent = df[df["LocalDatetime"] >= start]
+        hex_detail_rows = recent[["Hex_ID_10", "FullAddress", "CallType", "LocalDatetime", "CallID", "dispo"]].copy()
+
+        # Full Address Summary
+        fulladdr_summary = (
+            recent.groupby("FullAddress")
+            .agg(
+                Total_Calls=("CallID", "count"),
+                Top_Calls=("CallType", lambda x: ", ".join(
+                    [f"{ct} ({c})" for ct, c in Counter(x).most_common(3)])
+                )
+            )
+            .reset_index()
+        )
+
+        # Filter out low-frequency locations for longer timeframes
+        if label != "Last 7 Days":
+            fulladdr_summary = fulladdr_summary[fulladdr_summary["Total_Calls"] > 1]
+
+        fulladdr_summary = fulladdr_summary.sort_values("Total_Calls", ascending=False).head(top_n)
+
+        # Hex Summary (Resolution 10)
+        if "Hex_ID_10" in recent.columns:
+            hex_summary = (
+                recent.groupby("Hex_ID_10")
+                .agg(
+                    Total_Calls=("CallID", "count"),
+                    Top_Calls=("CallType", lambda x: ", ".join(
+                        [f"{ct} ({c})" for ct, c in Counter(x).most_common(3)])
+                    )
+                )
+                .reset_index()
+            )
+
+            #if label != "Last 7 Days":
+            hex_summary = hex_summary[hex_summary["Total_Calls"] > 1]
+
+            hex_summary = hex_summary.sort_values("Total_Calls", ascending=False).head(top_n)
+        else:
+            hex_summary = pd.DataFrame()
+
+        results[label] = {
+            "FullAddress": fulladdr_summary,
+            "Hex_ID_10": hex_summary,
+            "Hex_ID_10_Detail": hex_detail_rows[
+                hex_detail_rows["Hex_ID_10"].isin(hex_summary["Hex_ID_10"])
+            ]
+        }
+
+    return results
+
+def export_focus_area_html(results_dict, filename="resources/cfs/focus_area_dashboard.html"):
+    """
+    Takes the output from generate_focus_area_analysis and exports it as an HTML dashboard.
+    """
+    from pandas.io.formats.style import Styler
+
+    html_parts = ["<html><head><title>Focus Area Analysis</title></head><body>"]
+    html_parts.append("<h1>Focus Area Analysis Dashboard</h1>")
+
+    for timeframe, summaries in results_dict.items():
+        html_parts.append(f"<h2>{timeframe}</h2>")
+
+        # FullAddress Summary
+        if "FullAddress" in summaries:
+            html_parts.append("<h3>Top 15 Full Addresses</h3>")
+            styled_full = summaries["FullAddress"].style.set_table_attributes('border="1" cellpadding="5" width="100%"').set_caption("Top 15 Full Addresses")
+            html_parts.append(styled_full.to_html())
+
+        # Hex_ID_10 Summary
+        if "Hex_ID_10" in summaries and not summaries["Hex_ID_10"].empty:
+            html_parts.append("<h3>Top 15 H3 Hex Clusters (Res 10)</h3>")
+            hex_summary = summaries["Hex_ID_10"]
+            hex_detail = summaries.get("Hex_ID_10_Detail", pd.DataFrame())
+
+            for _, row in hex_summary.iterrows():
+                hex_id = row["Hex_ID_10"]
+                calls = row["Top_Calls"]
+                total = row["Total_Calls"]
+
+                html_parts.append(f"<p><strong>Hex: {hex_id}</strong> | Total Calls: {total} | Top Calls: {calls}</p>")
+
+                sub = hex_detail[hex_detail["Hex_ID_10"] == hex_id][["CallID","FullAddress", "CallType", "LocalDatetime","dispo"]]
+                if not sub.empty:
+                    html_parts.append(sub.to_html(index=False, border=1))
+                else:
+                    html_parts.append("<p><em>No address-level data found for this hex.</em></p>")
+
+
+    html_parts.append("</body></html>")
+
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write("\n".join(html_parts))
+
+    print(f"Dashboard exported to {filename}")

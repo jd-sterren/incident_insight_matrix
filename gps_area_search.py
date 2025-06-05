@@ -13,5 +13,5 @@ if  __name__ == "__main__":
     fn.collect_gps_data()
 
     # Call the function to search GPS area
-    fn.gps_area_search()
+    fn.search_gps_area()
     

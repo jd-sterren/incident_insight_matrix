@@ -51,3 +51,6 @@ gps_search_exports/
 
 # Ignore CFS files
 cfs/
+
+# Ignore test files
+test_*
