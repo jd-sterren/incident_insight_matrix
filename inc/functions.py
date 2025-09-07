@@ -40,6 +40,9 @@ def last_quarter(fmt=None):
 def last_year(fmt=None):
     return _format_date(today() - timedelta(days=365), fmt)
 
+def five_year(fmt=None):
+    return _format_date(today() - timedelta(days=1825), fmt)
+
 def _format_date(date_obj, fmt):
     """Helper function to format the date if needed."""
     return date_obj.strftime("%Y-%m-%d") if fmt == "str" else date_obj
